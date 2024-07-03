@@ -1,13 +1,16 @@
 package main
 
 import (
+	"bufio"
 	"fmt"
 	"net"
 	"os"
+	"strings"
 )
 
 const (
-	OK = "HTTP/1.1 200 OK\r\n\r\n"
+	OK        = "HTTP/1.1 200 OK\r\n\r\n"
+	NOT_FOUND = "HTTP/1.1 404 Not Found\r\n\r\n"
 )
 
 func main() {
@@ -25,6 +28,22 @@ func main() {
 		os.Exit(1)
 	}
 
-	connection.Write([]byte(OK))
+	buff := bufio.NewReader(connection)
+	raw, err := buff.ReadString('\n')
+	if err != nil {
+		fmt.Println(err)
+	}
+	// fmt.Println(raw)
+
+	args := strings.Split(raw, " ")
+	if args[1] == "/" {
+		_, err = connection.Write([]byte(OK))
+	} else {
+		_, err = connection.Write([]byte(NOT_FOUND))
+	}
+
+	if err != nil {
+		fmt.Println(err)
+	}
 	connection.Close()
 }
