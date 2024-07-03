@@ -13,6 +13,16 @@ const (
 	NOT_FOUND = "HTTP/1.1 404 Not Found\r\n\r\n"
 )
 
+func isCRLF(x string) bool {
+	crlf := []byte{13, 10}
+	inBytes := []byte(x)
+
+	if len(inBytes) != 2 {
+		return false
+	}
+	return inBytes[0] == crlf[0] && inBytes[1] == crlf[1]
+}
+
 func okWithBody(body, ctype string) []byte {
 	response := fmt.Sprintf(
 		"HTTP/1.1 200 OK\r\nContent-Type: %s\r\nContent-Length: %d\r\n\r\n%s",
@@ -24,11 +34,33 @@ func okWithBody(body, ctype string) []byte {
 	return []byte(response)
 }
 
+func parseHeaders(buff *bufio.Reader) []string {
+	var headers []string
+	header := "x"
+	for !isCRLF(header) {
+		header, _ = buff.ReadString('\n')
+		headers = append(headers, strings.TrimSpace(header))
+	}
+
+	return headers
+}
+
 func echo(fullpath string) []byte {
 	path := strings.Split(fullpath, "/")
 	message := path[2]
 
 	return okWithBody(message, "text/plain")
+}
+
+func userAgent(headers []string) []byte {
+	agent := ""
+	for _, v := range headers {
+		if strings.HasPrefix(v, "User-Agent") {
+			agent = strings.TrimSpace(strings.Split(v, ":")[1])
+		}
+	}
+
+	return okWithBody(agent, "text/plain")
 }
 
 func main() {
@@ -58,6 +90,10 @@ func main() {
 		_, err = connection.Write([]byte(OK))
 	} else if strings.HasPrefix(args[1], "/echo/") {
 		_, err = connection.Write(echo(args[1]))
+	} else if strings.HasPrefix(args[1], "/user-agent") {
+		headers := parseHeaders(buff)
+		response := userAgent(headers)
+		_, err = connection.Write(response)
 	} else {
 		_, err = connection.Write([]byte(NOT_FOUND))
 	}
