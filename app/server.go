@@ -6,6 +6,10 @@ import (
 	"os"
 )
 
+const (
+	OK = "HTTP/1.1 200 OK\r\n\r\n"
+)
+
 func main() {
 	fmt.Println("Logs from your program will appear here!")
 
@@ -15,9 +19,12 @@ func main() {
 		os.Exit(1)
 	}
 
-	_, err = l.Accept()
+	connection, err := l.Accept()
 	if err != nil {
 		fmt.Println("Error accepting connection: ", err.Error())
 		os.Exit(1)
 	}
+
+	connection.Write([]byte(OK))
+	connection.Close()
 }
