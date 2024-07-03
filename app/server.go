@@ -2,6 +2,7 @@ package main
 
 import (
 	"bufio"
+	"flag"
 	"fmt"
 	"net"
 	"os"
@@ -12,6 +13,8 @@ const (
 	OK        = "HTTP/1.1 200 OK\r\n\r\n"
 	NOT_FOUND = "HTTP/1.1 404 Not Found\r\n\r\n"
 )
+
+var FileDir string
 
 func isCRLF(x string) bool {
 	crlf := []byte{13, 10}
@@ -63,7 +66,23 @@ func userAgent(headers []string) []byte {
 	return okWithBody(agent, "text/plain")
 }
 
-func HandleConnection(connection net.Conn)  {
+func getFiles(reqPath string) []byte {
+	path := strings.Split(reqPath, "/")
+	fileName := path[2]
+
+	raw, err := os.ReadFile(FileDir + fileName)
+	if err != nil {
+		fmt.Println("error: ", err)
+		fmt.Println("fileName: ", fileName)
+		fmt.Println("fileDir: ", FileDir)
+		return []byte(NOT_FOUND)
+	}
+
+	return okWithBody(string(raw), "application/octet-stream")
+}
+
+func HandleConnection(connection net.Conn) {
+	defer connection.Close()
 	buff := bufio.NewReader(connection)
 	raw, err := buff.ReadString('\n')
 	if err != nil {
@@ -80,6 +99,8 @@ func HandleConnection(connection net.Conn)  {
 		headers := parseHeaders(buff)
 		response := userAgent(headers)
 		_, err = connection.Write(response)
+	} else if strings.HasPrefix(args[1], "/files") {
+		_, err = connection.Write(getFiles(args[1]))
 	} else {
 		_, err = connection.Write([]byte(NOT_FOUND))
 	}
@@ -87,11 +108,12 @@ func HandleConnection(connection net.Conn)  {
 	if err != nil {
 		fmt.Println(err)
 	}
-	connection.Close()
 }
 
 func main() {
 	fmt.Println("Logs from your program will appear here!")
+	flag.StringVar(&FileDir, "directory", "", "--directory /tpm/something")
+	flag.Parse()
 
 	l, err := net.Listen("tcp", "0.0.0.0:4221")
 	if err != nil {
