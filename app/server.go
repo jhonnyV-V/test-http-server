@@ -81,15 +81,19 @@ func echo(fullpath string, headers []string) []byte {
 	message := path[2]
 	var acceptEncoding string
 	encodingHeader := ""
+	encodings := []string{}
 	for _, v := range headers {
 		if strings.HasPrefix(v, "Accept-Encoding") {
-			acceptEncoding = strings.TrimSpace(strings.Split(v, ":")[1])
+			value := strings.TrimSpace(strings.Split(v, ":")[1])
+			encodings = strings.Split(value, ",")
 		}
 	}
-	fmt.Println(headers)
-	fmt.Println("Accept encoding", acceptEncoding)
+	for _, v := range encodings {
+		if strings.TrimSpace(v) == "gzip" {
+			acceptEncoding = "gzip"
+		}
+	}
 	if acceptEncoding == "gzip" {
-		fmt.Println("setting header", acceptEncoding)
 		encodingHeader = "Content-Encoding: gzip\r\n"
 		var buff bytes.Buffer
 		w := gzip.NewWriter(&buff)
