@@ -2,6 +2,8 @@ package main
 
 import (
 	"bufio"
+	"bytes"
+	"compress/gzip"
 	"flag"
 	"fmt"
 	"net"
@@ -30,9 +32,11 @@ func isCRLF(x string) bool {
 	return inBytes[0] == crlf[0] && inBytes[1] == crlf[1]
 }
 
-func okWithBody(body, ctype string) []byte {
+// TODO: use a string builder to write the headers
+func okWithBody(body, encoding, ctype string) []byte {
 	response := fmt.Sprintf(
-		"HTTP/1.1 200 OK\r\nContent-Type: %s\r\nContent-Length: %d\r\n\r\n%s",
+		"HTTP/1.1 200 OK\r\n%sContent-Type: %s\r\nContent-Length: %d\r\n\r\n%s",
+		encoding,
 		ctype,
 		len(body),
 		body,
@@ -52,28 +56,49 @@ func parseHeaders(buff *bufio.Reader) []string {
 	return headers
 }
 
-func parseBody(buff *bufio.Reader, headers []string) string {
-	var body []byte
+func parseBody(buff *bufio.Reader, headers []string) []byte {
 	var size int
-
 	for _, v := range headers {
 		if strings.HasPrefix(v, "Content-Length") {
 			value := strings.TrimSpace(strings.Split(v, ":")[1])
 			size, _ = strconv.Atoi(value)
 		}
 	}
-	body, err := buff.Peek(size)
+	body := make([]byte, size)
+
+	readed, err := buff.Read(body)
 	if err != nil {
 		panic(err)
 	}
-	return string(body)
+	if readed != size {
+		panic("Failed to read")
+	}
+	return body
 }
 
-func echo(fullpath string) []byte {
+func echo(fullpath string, headers []string) []byte {
 	path := strings.Split(fullpath, "/")
 	message := path[2]
+	var acceptEncoding string
+	encodingHeader := ""
+	for _, v := range headers {
+		if strings.HasPrefix(v, "Accept-Encoding") {
+			acceptEncoding = strings.TrimSpace(strings.Split(v, ":")[1])
+		}
+	}
+	fmt.Println(headers)
+	fmt.Println("Accept encoding", acceptEncoding)
+	if acceptEncoding == "gzip" {
+		fmt.Println("setting header", acceptEncoding)
+		encodingHeader = "Content-Encoding: gzip\r\n"
+		var buff bytes.Buffer
+		w := gzip.NewWriter(&buff)
+		_, _ = w.Write([]byte(message))
+		w.Close()
+		message = buff.String()
+	}
 
-	return okWithBody(message, "text/plain")
+	return okWithBody(message, encodingHeader, "text/plain")
 }
 
 func userAgent(headers []string) []byte {
@@ -84,7 +109,7 @@ func userAgent(headers []string) []byte {
 		}
 	}
 
-	return okWithBody(agent, "text/plain")
+	return okWithBody(agent, "", "text/plain")
 }
 
 func getFiles(reqPath string) []byte {
@@ -96,14 +121,14 @@ func getFiles(reqPath string) []byte {
 		return []byte(NOT_FOUND)
 	}
 
-	return okWithBody(string(raw), "application/octet-stream")
+	return okWithBody(string(raw), "", "application/octet-stream")
 }
 
-func uploadFile(reqPath string, body string) []byte {
+func uploadFile(reqPath string, body []byte) []byte {
 	path := strings.Split(reqPath, "/")
 	fileName := path[2]
 
-	err := os.WriteFile(FileDir+fileName, []byte(body), 0666)
+	err := os.WriteFile(FileDir+fileName, body, 0666)
 	if err != nil {
 		return []byte(NOT_FOUND)
 	}
@@ -125,7 +150,9 @@ func HandleConnection(connection net.Conn) {
 		if args[1] == "/" {
 			_, err = connection.Write([]byte(OK))
 		} else if strings.HasPrefix(args[1], "/echo/") {
-			_, err = connection.Write(echo(args[1]))
+			headers := parseHeaders(buff)
+			response := echo(args[1], headers)
+			_, err = connection.Write(response)
 		} else if strings.HasPrefix(args[1], "/user-agent") {
 			headers := parseHeaders(buff)
 			response := userAgent(headers)
